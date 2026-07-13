@@ -133,20 +133,35 @@ function renderListItem(text) {
 }
 
 function buildList(items, start, indent) {
-  const tag = /^\d/.test(items[start].marker) ? 'ol' : 'ul';
+  // Determine list type from the first item at the current indent level,
+  // not from items[start] which may be over-indented relative to indent
+  // (P1: first marker controls list type).
+  const firstAtLevel = (() => {
+    for (let j = start; j < items.length; j++) {
+      if (items[j].indent === indent) return items[j];
+    }
+    return items[start];
+  })();
+  const tag = /^\d/.test(firstAtLevel.marker) ? 'ol' : 'ul';
   const parts = [];
   let i = start;
   while (i < items.length && items[i].indent >= indent) {
     if (items[i].indent > indent) {
-      // Deeper item: nest a sublist inside the previous <li>
-      const nested = buildList(items, i, items[i].indent);
+      // Collect all consecutive deeper items as one nested block so
+      // outdented runs (e.g. indent 6 -> 4) share a single parent
+      // list instead of creating duplicate sibling <ul>/<ol> blocks
+      // (P2: outdented runs share phantom parent).
+      const nestedStart = i;
+      while (i < items.length && items[i].indent > indent) i++;
+      const nestedItems = items.slice(nestedStart, i);
+      const nestedBaseIndent = Math.min(...nestedItems.map(function(it) { return it.indent; }));
+      const nested = buildList(nestedItems, 0, nestedBaseIndent);
       if (parts.length > 0) {
         const last = parts.pop();
         parts.push(last.replace(/<\/li>$/, '\n' + nested.html + '\n</li>'));
       } else {
         parts.push('<li>\n' + nested.html + '\n</li>');
       }
-      i = nested.end;
     } else {
       parts.push(renderListItem(items[i].text));
       i += 1;
